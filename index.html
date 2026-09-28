@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🇨🇳 중국 지도 SENSE (180초 여유만점 에디션)</title>
+    <!-- Leaflet 지도 및 PeerJS, QR코드 라이브러리 로드 -->
+    <link rel="stylesheet" href="https://unpkg.com" />
+    <script src="https://unpkg.com"></script>
+    <script src="https://cloudflare.com"></script>
+    <script src="https://cloudflare.com"></script>
+    <style>
+        body { font-family: 'Malgun Gothic', sans-serif; margin: 0; padding: 0; background-color: #f5f6fa; display: flex; flex-direction: column; align-items: center; }
+        header { background-color: #d63031; color: white; width: 100%; text-align: center; padding: 10px 0; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .container { width: 90%; max-width: 1000px; display: flex; flex-direction: column; align-items: center; margin-top: 15px; }
+        #setup-box, #info-panel, #quiz-box { background: white; width: 100%; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 15px; text-align: center; box-sizing: border-box; }
+        #quiz-box { font-size: 1.4rem; font-weight: bold; background: #dfe6e9; border-left: 5px solid #d63031; display: none; }
+        #main-layout { display: flex; width: 100%; gap: 15px; }
+        #map { flex: 2; height: 550px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        #sidebar { flex: 1; background: white; padding: 15px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); display: flex; flex-direction: column; }
+        #rank-list { list-style: none; padding: 0; margin: 0; overflow-y: auto; flex-grow: 1; }
+        #rank-list li { padding: 10px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; font-weight: bold; }
+        button { background-color: #2ecc71; color: white; border: none; padding: 10px 20px; font-size: 1.1rem; font-weight: bold; border-radius: 5px; cursor: pointer; margin: 5px; }
+        button:hover { background-color: #27ae60; }
+        input { padding: 10px; font-size: 1rem; border-radius: 5px; border: 1px solid #ccc; width: 150px; text-align: center; }
+        #qrcode { display: flex; justify-content: center; margin: 15px 0; }
+        .welcome-msg { font-size: 1.2rem; color: #2e86de; font-weight: bold; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+
+<header>
+    <h2>🇨🇳 중국 지도 SENSE (실시간 30인 사운드 에디션)</h2>
+</header>
+
+<div class="container">
+    <div id="setup-box">
+        <div id="teacher-setup">
+            <button onclick="initTeacher()">교사 방 만들기</button>
+            <div id="room-code-display" style="margin-top:10px; font-size:1.2rem; font-weight:bold; color:#d63031;"></div>
+            <div id="qrcode"></div>
+            <button id="start-game-btn" style="display:none; background-color:#3498db;" onclick="broadStartGame()">게임 시작 (모든 학생 동시 시작)</button>
+        </div>
+        <div id="student-setup" style="margin-top: 15px; border-top: 1px dashed #ccc; padding-top: 15px;">
+            <div id="auto-join-msg" class="welcome-msg" style="display:none;">🎉 QR 연결 완료! 이름을 입력하고 입장하세요.</div>
+            <input type="text" id="room-id-input" placeholder="방 코드 입력">
+            <input type="text" id="student-name-input" placeholder="학번 / 이름">
+            <button id="join-btn" onclick="initStudent()" style="background-color:#e67e22;">학생 참가하기</button>
+        </div>
+    </div>
+
+    <div id="info-panel" style="display:none; flex-justify: space-around;">
+        <div>점수: <span id="score">0</span>점</div>
+        <div>문제: <span id="progress">0 / 10</span></div>
+        <div>⏱ 시간: <span id="timer">180</span>초</div>
+    </div>
+
+    <div id="quiz-box">지도를 터치하여 문제를 해결하세요!</div>
+
+    <div id="main-layout">
+        <div id="map"></div>
+        <div id="sidebar">
+            <h3>🏆 현재 순위 (실시간)</h3>
+            <ul id="rank-list">
+                <li><span style="color:#7f8c8d;">참가자가 없습니다.</span></li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<script>
+    const sndCorrect = new Audio("https://mixkit.co"); 
+    const sndIncorrect = new Audio("https://mixkit.co"); 
+    const sndVictory = new Audio("https://mixkit.co"); 
+    sndVictory.volume = 1.0; 
+
+    const quizData = [
+        { quizText: "1. 쯔진청이 있는 베이징을 찾으세요.", lat: 39.9042, lng: 116.4074, radius: 40000 },
+        { quizText: "2. 동방명주가 있는 상하이를 찾으세요.", lat: 31.2304, lng: 121.4737, radius: 40000 },
+        { quizText: "3. 판다가 사는 청두를 찾으세요.", lat: 30.5728, lng: 104.0668, radius: 50000 },
+        { quizText: "4. 병마용갱이 있는 시안을 찾으세요.", lat: 34.3416, lng: 108.9398, radius: 50000 },
+        { quizText: "5. 모래사막에 있는 내몽골(네이먼구) 자치구를 찾으세요.", lat: 44.0500, lng: 113.8667, radius: 250000 },
+        { quizText: "6. 야경이 멋있는 홍콩을 찾으세요.", lat: 22.3193, lng: 114.1694, radius: 30000 },
+        { quizText: "7. 카지노가 많은 마카오를 찾으세요.", lat: 22.1987, lng: 113.5439, radius: 30000 },
+        { quizText: "8. 대만을 찾으세요.", lat: 23.6978, lng: 120.9605, radius: 80000 },
+        { quizText: "9. 얼음 축제가 열리는 하얼빈을 찾으세요.", lat: 45.8038, lng: 126.5350, radius: 60000 },
+        { quizText: "10. 백두산 장백산이 있는 지린성을 찾으세요.", lat: 43.6661, lng: 126.1923, radius: 120000 }
+    ];
+
+    let peer = null;
+    let conn = null;
+    let isTeacher = false;
+    let students = {}; 
+    let gameActive = false;
+    let score = 0;
+    let currentIdx = 0;
+    let shuffledQuiz = [];
+    let timeLeft = 180; // 💡 제한 시간 180초로 수정
+    let timerInterval = null;
+
+    const map = L.map('map').setView([35.8617, 104.1954], 4);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+    const urlParams = new URLSearchParams(window.location.search);
+    
+    if(urlParams.get('teacher') === '1') {
+        document.getElementById('student-setup').style.display = 'none';
+    }
+
+    const autoRoomId = urlParams.get('room');
+    if (autoRoomId) {
+        document.getElementById('room-id-input').value = autoRoomId;
+        document.getElementById('room-id-input').style.display = 'none';
+        document.getElementById('auto-join-msg').style.display = 'block';
+    }
+
+    function initTeacher() {
+        isTeacher = true;
+        const roomId = 'room-' + Math.floor(100000 + Math.random() * 900000);
+        peer = new Peer(roomId);
+
+        peer.on('open', (id) => {
+            document.getElementById('room-code-display').innerText = `방 코드: ${id}`;
+            document.getElementById('start-game-btn').style.display = 'inline-block';
+            document.getElementById('student-setup').style.display = 'none';
+            
+            document.getElementById('qrcode').innerHTML = "";
+            let cleanUrl = window.location.href.split('?');
+            
+            new QRCode(document.getElementById("qrcode"), {
+                text: `${cleanUrl}?room=${id}`,
+                width: 200,
+                height: 200
+            });
+        });
+
+        peer.on('connection', (connection) => {
+            connection.on('data', (data) => {
+                if(data.type === 'join') {
+                    students[connection.peer] = { name: data.name, score: 0 };
+                    updateRankUI();
+                } else if(data.type === 'scoreUpdate') {
+                    if(students[connection.peer]) {
+                        students[connection.peer].score = data.score;
+                        updateRankUI();
+                    }
+                } else if(data.type === 'gameFinishedForce') {
+                    broadEndGameSignal();
+                }
+            });
+        });
+    }
+
+    function initStudent() {
+        const roomId = document.getElementById('room-id-input').value;
+        const name = document.getElementById('student-name-input').value;
+        if(!roomId || !name) { alert("이름을 정확히 입력하세요."); return; }
+
+        document.getElementById('join-btn').disabled = true;
+        document.getElementById('join-btn').innerText = "접속 중...";
+
+        peer = new Peer();
+        peer.on('open', (id) => {
+            conn = peer.connect(roomId);
+            conn.on('open', () => {
+                conn.send({ type: 'join', name: name });
+                document.getElementById('setup-box').innerHTML = `<h3>🟢 [${name}] 대기실 입장 완료! 선생님이 게임을 시작할 때까지 잠시 기다려 주세요.</h3>`;
+            });
+            conn.on('data', (data) => {
+                if(data.type === 'start') {
+                    shuffledQuiz = data.quiz;
+                    startLocalGame();
+                } else if(data.type === 'forceEnd') {
+                    endGame(data.winnerName);
+                }
+            });
+        });
+    }
+
+    function broadStartGame() {
+        shuffledQuiz = [...quizData].sort(() => Math.random() - 0.5);
+        for (let connId in peer.connections) {
+            peer.connections[connId].send({ type: 'start', quiz: shuffledQuiz });
+        }
+        document.getElementById('setup-box').style.display = 'none';
+        alert("게임이 시작되었습니다! 학생들 태블릿을 확인해 보세요.");
+        
+        timeLeft = 180; // 💡 교사용 타이머 180초 세팅
+        clearInterval(timerInterval);
+        timerInterval = setInterval(() => {
+            timeLeft--;
+            if(timeLeft <= 0) {
+                broadEndGameSignal();
+            }
+        }, 1000);
+    }
+
+    function broadEndGameSignal() {
+        clearInterval(timerInterval);
+        let sorted = Object.values(students).sort((a,b) => b.score - a.score);
+        let winner = sorted.length > 0 ? sorted[0].name : "없음";
+        
+        for (let connId in peer.connections) {
+            peer.connections[connId].send({ type: 'forceEnd', winnerName: winner });
+        }
+        
+        endGame(winner);
+    }
+
+    function startLocalGame() {
+        gameActive = true;
+        score = 0;
+        currentIdx = 0;
